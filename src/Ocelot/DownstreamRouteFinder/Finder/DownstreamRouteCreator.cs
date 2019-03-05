@@ -2,6 +2,7 @@
 {
     using System.Collections.Concurrent;
     using System.Collections.Generic;
+    using System.Linq;
     using Configuration;
     using Configuration.Builder;
     using Configuration.Creator;
@@ -21,7 +22,7 @@
             _cache = new ConcurrentDictionary<string, OkResponse<DownstreamRoute>>();
         }
 
-        public Response<DownstreamRoute> Get(string upstreamUrlPath, string upstreamHttpMethod, IInternalConfiguration configuration, string upstreamHost)
+        public Response<DownstreamRoute> Get(string upstreamUrlPath, string upstreamQueryString, string upstreamHttpMethod, IInternalConfiguration configuration, string upstreamHost)
         {            
             var serviceName = GetServiceName(upstreamUrlPath);
 
@@ -41,9 +42,11 @@
                 return downstreamRoute;
             }
 
-            var qosOptions = _qoSOptionsCreator.Create(configuration.QoSOptions, downstreamPathForKeys, new []{ upstreamHttpMethod });
+            var qosOptions = _qoSOptionsCreator.Create(configuration.QoSOptions, downstreamPathForKeys, new List<string> { upstreamHttpMethod });
 
-            var downstreamReRoute = new DownstreamReRouteBuilder()
+            var upstreamPathTemplate = new UpstreamPathTemplateBuilder().WithOriginalValue(upstreamUrlPath).Build();
+
+            var downstreamReRouteBuilder = new DownstreamReRouteBuilder()
                 .WithServiceName(serviceName)
                 .WithLoadBalancerKey(loadBalancerKey)
                 .WithDownstreamPathTemplate(downstreamPath)
@@ -52,17 +55,33 @@
                 .WithQosOptions(qosOptions)
                 .WithDownstreamScheme(configuration.DownstreamScheme)
                 .WithLoadBalancerOptions(configuration.LoadBalancerOptions)
-                .Build();
+                .WithUpstreamPathTemplate(upstreamPathTemplate);
+
+                var rateLimitOptions = configuration.ReRoutes != null 
+                    ? configuration.ReRoutes
+                        .SelectMany(x => x.DownstreamReRoute)
+                        .FirstOrDefault(x => x.ServiceName == serviceName) 
+                    : null;
+
+                if(rateLimitOptions != null)
+                {
+                    downstreamReRouteBuilder
+                        .WithRateLimitOptions(rateLimitOptions.RateLimitOptions)
+                        .WithEnableRateLimiting(true);
+                }
+                
+                var downstreamReRoute = downstreamReRouteBuilder.Build();
 
             var reRoute = new ReRouteBuilder()
                 .WithDownstreamReRoute(downstreamReRoute)
                 .WithUpstreamHttpMethod(new List<string>(){ upstreamHttpMethod })
+                .WithUpstreamPathTemplate(upstreamPathTemplate)
                 .Build();
 
             downstreamRoute = new OkResponse<DownstreamRoute>(new DownstreamRoute(new List<PlaceholderNameAndValue>(), reRoute));
 
-            _cache.AddOrUpdate(loadBalancerKey, downstreamRoute, (x, y)  => downstreamRoute);
-
+            _cache.AddOrUpdate(loadBalancerKey, downstreamRoute, (x, y) => downstreamRoute);
+        
             return downstreamRoute;
         }
 

@@ -1,7 +1,7 @@
 Configuration
 ============
 
-An example configuration can be found `here <https://github.com/TomPallister/Ocelot/blob/develop/test/Ocelot.ManualTest/ocelot.json>`_.
+An example configuration can be found `here <https://github.com/ThreeMammals/Ocelot/blob/develop/test/Ocelot.ManualTest/ocelot.json>`_.
 There are two sections to the configuration. An array of ReRoutes and a GlobalConfiguration. 
 The ReRoutes are the objects that tell Ocelot how to treat an upstream request. The Global 
 configuration is a bit hacky and allows overrides of ReRoute specific settings. It's useful
@@ -64,7 +64,6 @@ Here is an example ReRoute configuration, You don't need to set all of these thi
                 "UseCookieContainer": true,
                 "UseTracing": true
             },
-            "UseServiceDiscovery": false,
             "DangerousAcceptAnyServerCertificateValidator": false
         }
 
@@ -108,7 +107,7 @@ Instead of adding the configuration directly e.g. AddJsonFile("ocelot.json") you
                 .SetBasePath(hostingContext.HostingEnvironment.ContentRootPath)
                 .AddJsonFile("appsettings.json", true, true)
                 .AddJsonFile($"appsettings.{hostingContext.HostingEnvironment.EnvironmentName}.json", true, true)
-                .AddOcelot()
+                .AddOcelot(hostingContext.HostingEnvironment)
                 .AddEnvironmentVariables();
         })
 
@@ -118,16 +117,37 @@ The way Ocelot merges the files is basically load them, loop over them, add any 
 
 At the moment there is no validation at this stage it only happens when Ocelot validates the final merged configuration. This is something to be aware of when you are investigating problems. I would advise always checking what is in ocelot.json if you have any problems.
 
+You can also give Ocelot a specific path to look in for the configuration files like below.
+
+.. code-block:: csharp
+
+    .ConfigureAppConfiguration((hostingContext, config) =>
+        {
+            config
+                .SetBasePath(hostingContext.HostingEnvironment.ContentRootPath)
+                .AddJsonFile("appsettings.json", true, true)
+                .AddJsonFile($"appsettings.{hostingContext.HostingEnvironment.EnvironmentName}.json", true, true)
+                .AddOcelot("/foo/bar", hostingContext.HostingEnvironment)
+                .AddEnvironmentVariables();
+        })
+
+Ocelot needs the HostingEnvironment so it know's to exclude anything environment specific from the algorithm. 
+
 Store configuration in consul
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you add the following when you register your services Ocelot will attempt to store and retrieve its configuration in consul KV store.
+The first thing you need to do is install the NuGet package that provides Consul support in Ocelot.
+
+``Install-Package Ocelot.Provider.Consul``
+
+Then you add the following when you register your services Ocelot will attempt to store and retrieve its configuration in consul KV store.
 
 .. code-block:: csharp
 
  services
     .AddOcelot()
-    .AddStoreOcelotConfigurationInConsul();
+    .AddConsul()
+    .AddConfigStoredInConsul();
 
 You also need to add the following to your ocelot.json. This is how Ocelot
 finds your Consul agent and interacts to load and store the configuration from Consul.
@@ -145,6 +165,16 @@ I decided to create this feature after working on the raft consensus algorithm a
 I guess it means if you want to use Ocelot to its fullest you take on Consul as a dependency for now.
 
 This feature has a 3 second ttl cache before making a new request to your local consul agent.
+
+Reload JSON config on change
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Ocelot supports reloading the json configuration file on change. e.g. the following will recreate Ocelots internal configuration when the ocelot.json file is updated
+manually.
+
+.. code-block:: json
+
+    config.AddJsonFile("ocelot.json", optional: false, reloadOnChange: true);
 
 Configuration Key
 -----------------

@@ -23,7 +23,6 @@
     {
         private readonly Mock<IDownstreamRouteProvider> _finder;
         private readonly Mock<IDownstreamRouteProviderFactory> _factory;
-        private readonly Mock<IInternalConfigurationRepository> _repo;
         private Response<DownstreamRoute> _downstreamRoute;
         private IInternalConfiguration _config;
         private Mock<IOcelotLoggerFactory> _loggerFactory;
@@ -35,7 +34,6 @@
 
         public DownstreamRouteFinderMiddlewareTests()
         {
-            _repo = new Mock<IInternalConfigurationRepository>();
             _finder = new Mock<IDownstreamRouteProvider>();
             _factory = new Mock<IDownstreamRouteProviderFactory>();
             _factory.Setup(x => x.Get(It.IsAny<IInternalConfiguration>())).Returns(_finder.Object);
@@ -45,7 +43,7 @@
             _loggerFactory.Setup(x => x.CreateLogger<DownstreamRouteFinderMiddleware>()).Returns(_logger.Object);
             _next = context => Task.CompletedTask;
             _multiplexer = new Mock<IMultiplexer>();
-            _middleware = new DownstreamRouteFinderMiddleware(_next, _loggerFactory.Object, _factory.Object, _repo.Object, _multiplexer.Object);
+            _middleware = new DownstreamRouteFinderMiddleware(_next, _loggerFactory.Object, _factory.Object, _multiplexer.Object);
         }
 
         [Fact]
@@ -86,7 +84,7 @@
         {
             _downstreamRoute = new OkResponse<DownstreamRoute>(downstreamRoute);
             _finder
-                .Setup(x => x.Get(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IInternalConfiguration>(), It.IsAny<string>()))
+                .Setup(x => x.Get(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IInternalConfiguration>(), It.IsAny<string>()))
                 .Returns(_downstreamRoute);
         }
 

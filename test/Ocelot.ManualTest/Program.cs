@@ -1,4 +1,7 @@
-﻿namespace Ocelot.ManualTest
+﻿using System.Reflection.Metadata.Ecma335;
+using Ocelot.Requester;
+
+namespace Ocelot.ManualTest
 {
     using System.IO;
     using Microsoft.AspNetCore.Hosting;
@@ -7,6 +10,10 @@
     using Microsoft.Extensions.DependencyInjection;
     using Ocelot.DependencyInjection;
     using Ocelot.Middleware;
+    using System;
+    using System.Net.Http;
+    using System.Threading.Tasks;
+    using System.Threading;
 
     public class Program
     {
@@ -21,7 +28,7 @@
                         .SetBasePath(hostingContext.HostingEnvironment.ContentRootPath)
                         .AddJsonFile("appsettings.json", true, true)
                         .AddJsonFile($"appsettings.{hostingContext.HostingEnvironment.EnvironmentName}.json", true, true)
-                        .AddJsonFile("ocelot.json")
+                        .AddJsonFile("ocelot.json", false, false)
                         .AddEnvironmentVariables();
                 })
                 .ConfigureServices(s => {
@@ -32,17 +39,19 @@
                             x.Audience = "test";
                         });
 
-                    s.AddOcelot()
-                        .AddCacheManager(x =>
-                        {
-                            x.WithDictionaryHandle();
-                        })
-                      /*.AddOpenTracing(option =>
-                      {
-                          option.CollectorUrl = "http://localhost:9618";
-                          option.Service = "Ocelot.ManualTest";
-                      })*/
-                    .AddAdministration("/administration", "secret");
+                     s.AddSingleton<QosDelegatingHandlerDelegate>((x, t) => new FakeHandler());
+                     s.AddOcelot()
+                        .AddDelegatingHandler<FakeHandler>(true);
+                        // .AddCacheManager(x =>
+                        // {
+                        //     x.WithDictionaryHandle();
+                        // })
+                        // .AddOpenTracing(option =>
+                        // {
+                        //     option.CollectorUrl = "http://localhost:9618";
+                        //     option.Service = "Ocelot.ManualTest";
+                        // })
+                        // .AddAdministration("/administration", "secret");
                 })
                 .ConfigureLogging((hostingContext, logging) =>
                 {
@@ -56,6 +65,17 @@
                 })
                 .Build()
                 .Run();                
+        }
+    }
+
+    public class FakeHandler : DelegatingHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Console.WriteLine(request.RequestUri);
+
+            //do stuff and optionally call the base handler..
+            return await base.SendAsync(request, cancellationToken);
         }
     }
 }

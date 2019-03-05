@@ -1,15 +1,21 @@
 ﻿using System.Text.RegularExpressions;
 using Ocelot.Responses;
+using Ocelot.Values;
 
 namespace Ocelot.DownstreamRouteFinder.UrlMatcher
 {
     public class RegExUrlMatcher : IUrlPathToUrlTemplateMatcher
     {
-        public Response<UrlMatch> Match(string upstreamUrlPath, string upstreamUrlPathTemplate)
+        public Response<UrlMatch> Match(string upstreamUrlPath, string upstreamQueryString, UpstreamPathTemplate pathTemplate)
         {
-            var regex = new Regex(upstreamUrlPathTemplate);
+            if (!pathTemplate.ContainsQueryString)
+            {
+                return pathTemplate.Pattern.IsMatch(upstreamUrlPath)
+                    ? new OkResponse<UrlMatch>(new UrlMatch(true))
+                    : new OkResponse<UrlMatch>(new UrlMatch(false));
+            }
 
-            return regex.IsMatch(upstreamUrlPath) 
+            return pathTemplate.Pattern.IsMatch($"{upstreamUrlPath}{upstreamQueryString}") 
                 ? new OkResponse<UrlMatch>(new UrlMatch(true)) 
                 : new OkResponse<UrlMatch>(new UrlMatch(false));
         }

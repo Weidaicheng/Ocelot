@@ -93,14 +93,14 @@ Then map the authentication provider key to a ReRoute in your configuration e.g.
 Identity Server Bearer Tokens
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-In order to use IdentityServer bearer tokens register your IdentityServer services as usual in ConfigureServices with a scheme (key). If you don't understand how to do this please consul the IdentityServer documentation.
+In order to use IdentityServer bearer tokens register your IdentityServer services as usual in ConfigureServices with a scheme (key). If you don't understand how to do this please consult the IdentityServer documentation.
 
 .. code-block:: csharp
 
     public void ConfigureServices(IServiceCollection services)
     {
         var authenticationProviderKey = "TestKey";
-        var options = o =>
+        Action<IdentityServerAuthenticationOptions> options = o =>
             {
                 o.Authority = "https://whereyouridentityserverlives.com";
                 o.ApiName = "api";
@@ -135,6 +135,11 @@ Then map the authentication provider key to a ReRoute in your configuration e.g.
                 "AllowedScopes": []
             }
         }]
+
+Okta
+^^^^
+
+I have not had time to write this up but we have `Issue 446 <https://github.com/ThreeMammals/Ocelot/issues/446>`_ that contains some code and examples that might help with Okta integration.
 
 Allowed Scopes
 ^^^^^^^^^^^^^

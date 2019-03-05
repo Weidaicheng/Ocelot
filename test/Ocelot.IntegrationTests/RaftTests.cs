@@ -1,29 +1,31 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
-using Ocelot.Configuration.File;
-using Ocelot.Raft;
-using Rafty.Concensus;
-using Rafty.Infrastructure;
-using Shouldly;
-using Xunit;
-using static Rafty.Infrastructure.Wait;
-using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Configuration;
-using Ocelot.DependencyInjection;
-using Ocelot.Middleware;
-
-namespace Ocelot.IntegrationTests
+﻿namespace Ocelot.IntegrationTests
 {
+    using System;
+    using System.Collections.Generic;
+    using System.IO;
+    using System.Linq;
+    using System.Net.Http;
+    using System.Net.Http.Headers;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using Administration;
+    using Configuration.File;
+    using DependencyInjection;
+    using Microsoft.AspNetCore.Hosting;
+    using Microsoft.Data.Sqlite;
+    using Microsoft.Extensions.Configuration;
+    using Microsoft.Extensions.DependencyInjection;
+    using Middleware;
+    using Newtonsoft.Json;
+    using Shouldly;
+    using Xunit;
     using Xunit.Abstractions;
+    using Ocelot.Administration;
+    using Ocelot.IntegrationTests;
+    using Ocelot.Provider.Rafty;
+    using Ocelot.Infrastructure;
+    using Rafty.Infrastructure;
+    using Wait = Rafty.Infrastructure.Wait;
 
     public class RaftTests : IDisposable
     {
@@ -31,7 +33,7 @@ namespace Ocelot.IntegrationTests
         private readonly List<IWebHostBuilder> _webHostBuilders;
         private readonly List<Thread> _threads;
         private FilePeers _peers;
-        private readonly HttpClient _httpClient;
+        private HttpClient _httpClient;
         private readonly HttpClient _httpClientForAssertions;
         private BearerToken _token;
         private HttpResponseMessage _response;
@@ -42,23 +44,33 @@ namespace Ocelot.IntegrationTests
         {
             _output = output;
             _httpClientForAssertions = new HttpClient();
-            _httpClient = new HttpClient();
-            var ocelotBaseUrl = "http://localhost:5000";
-            _httpClient.BaseAddress = new Uri(ocelotBaseUrl);
             _webHostBuilders = new List<IWebHostBuilder>();
             _builders = new List<IWebHost>();
             _threads = new List<Thread>();
         }
-        
-        [Fact(Skip = "still broken waiting for work in rafty")]
-        public void should_persist_command_to_five_servers()
+
+        [Fact(Skip = "Still not stable, more work required in rafty..")]
+        public async Task should_persist_command_to_five_servers()
         {
-             var configuration = new FileConfiguration
-             { 
-                 GlobalConfiguration = new FileGlobalConfiguration
-                 {
-                 }
-             };
+            var peers = new List<FilePeer>
+            {
+                new FilePeer {HostAndPort = "http://localhost:5000"},
+
+                new FilePeer {HostAndPort = "http://localhost:5001"},
+
+                new FilePeer {HostAndPort = "http://localhost:5002"},
+
+                new FilePeer {HostAndPort = "http://localhost:5003"},
+
+                new FilePeer {HostAndPort = "http://localhost:5004"}
+            };
+
+            var configuration = new FileConfiguration
+            {
+                GlobalConfiguration = new FileGlobalConfiguration
+                {
+                }
+            };
 
             var updatedConfiguration = new FileConfiguration
             {
@@ -99,22 +111,36 @@ namespace Ocelot.IntegrationTests
                     }
                 }
             };
-             
+
             var command = new UpdateFileConfiguration(updatedConfiguration);
+            GivenThePeersAre(peers);
             GivenThereIsAConfiguration(configuration);
             GivenFiveServersAreRunning();
-            GivenIHaveAnOcelotToken("/administration");
-            WhenISendACommandIntoTheCluster(command);
+            await GivenIHaveAnOcelotToken("/administration");
+            await WhenISendACommandIntoTheCluster(command);
             Thread.Sleep(5000);
-            ThenTheCommandIsReplicatedToAllStateMachines(command);
+            await ThenTheCommandIsReplicatedToAllStateMachines(command);
         }
 
-        [Fact(Skip = "still broken waiting for work in rafty")]
-        public void should_persist_command_to_five_servers_when_using_administration_api()
+        [Fact(Skip = "Still not stable, more work required in rafty..")]
+        public async Task should_persist_command_to_five_servers_when_using_administration_api()
         {
-             var configuration = new FileConfiguration
-             { 
-             };
+            var peers = new List<FilePeer>
+            {
+                new FilePeer {HostAndPort = "http://localhost:5005"},
+
+                new FilePeer {HostAndPort = "http://localhost:5006"},
+
+                new FilePeer {HostAndPort = "http://localhost:5007"},
+
+                new FilePeer {HostAndPort = "http://localhost:5008"},
+
+                new FilePeer {HostAndPort = "http://localhost:5009"}
+            };
+
+            var configuration = new FileConfiguration
+            {
+            };
 
             var updatedConfiguration = new FileConfiguration
             {
@@ -152,19 +178,31 @@ namespace Ocelot.IntegrationTests
                     }
                 }
             };
-             
+
             var command = new UpdateFileConfiguration(updatedConfiguration);
+            GivenThePeersAre(peers);
             GivenThereIsAConfiguration(configuration);
             GivenFiveServersAreRunning();
-            GivenIHaveAnOcelotToken("/administration");
+            await GivenIHaveAnOcelotToken("/administration");
             GivenIHaveAddedATokenToMyRequest();
-            WhenIPostOnTheApiGateway("/administration/configuration", updatedConfiguration);
-            ThenTheCommandIsReplicatedToAllStateMachines(command);
+            await WhenIPostOnTheApiGateway("/administration/configuration", updatedConfiguration);
+            await ThenTheCommandIsReplicatedToAllStateMachines(command);
         }
 
-        private void WhenISendACommandIntoTheCluster(UpdateFileConfiguration command)
+        private void GivenThePeersAre(List<FilePeer> peers)
         {
-            bool SendCommand()
+            FilePeers filePeers = new FilePeers();
+            filePeers.Peers.AddRange(peers);
+            var json = JsonConvert.SerializeObject(filePeers);
+            File.WriteAllText("peers.json", json);
+            _httpClient = new HttpClient();
+            var ocelotBaseUrl = peers[0].HostAndPort;
+            _httpClient.BaseAddress = new Uri(ocelotBaseUrl);
+        }
+
+        private async Task WhenISendACommandIntoTheCluster(UpdateFileConfiguration command)
+        {
+            async Task<bool> SendCommand()
             {
                 try
                 {
@@ -174,13 +212,13 @@ namespace Ocelot.IntegrationTests
                         TypeNameHandling = TypeNameHandling.All
                     });
                     var httpContent = new StringContent(json);
-                    httpContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+                    httpContent.Headers.ContentType = new MediaTypeHeaderValue("application/json");
                     using (var httpClient = new HttpClient())
                     {
                         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token.AccessToken);
-                        var response = httpClient.PostAsync($"{p.HostAndPort}/administration/raft/command", httpContent).GetAwaiter().GetResult();
+                        var response = await httpClient.PostAsync($"{p.HostAndPort}/administration/raft/command", httpContent);
                         response.EnsureSuccessStatusCode();
-                        var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                        var content = await response.Content.ReadAsStringAsync();
 
                         var errorResult = JsonConvert.DeserializeObject<ErrorResponse<UpdateFileConfiguration>>(content);
 
@@ -206,25 +244,31 @@ namespace Ocelot.IntegrationTests
                 }
             }
 
-            var commandSent = WaitFor(20000).Until(() => SendCommand());
-            commandSent.ShouldBeTrue();   
+            var commandSent = await Wait.WaitFor(40000).Until(async () =>
+            {
+                var result = await SendCommand();
+                Thread.Sleep(1000);
+                return result;
+            });
+
+            commandSent.ShouldBeTrue();
         }
 
-        private void ThenTheCommandIsReplicatedToAllStateMachines(UpdateFileConfiguration expecteds)
-        {            
-            bool CommandCalledOnAllStateMachines()
+        private async Task ThenTheCommandIsReplicatedToAllStateMachines(UpdateFileConfiguration expecteds)
+        {
+            async Task<bool> CommandCalledOnAllStateMachines()
             {
                 try
                 {
                     var passed = 0;
                     foreach (var peer in _peers.Peers)
                     {
-                        var path = $"{peer.HostAndPort.Replace("/","").Replace(":","")}.db";
-                        using(var connection = new SqliteConnection($"Data Source={path};"))
+                        var path = $"{peer.HostAndPort.Replace("/", "").Replace(":", "")}.db";
+                        using (var connection = new SqliteConnection($"Data Source={path};"))
                         {
                             connection.Open();
                             var sql = @"select count(id) from logs";
-                            using(var command = new SqliteCommand(sql, connection))
+                            using (var command = new SqliteCommand(sql, connection))
                             {
                                 var index = Convert.ToInt32(command.ExecuteScalar());
                                 index.ShouldBe(1);
@@ -232,9 +276,9 @@ namespace Ocelot.IntegrationTests
                         }
 
                         _httpClientForAssertions.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token.AccessToken);
-                        var result = _httpClientForAssertions.GetAsync($"{peer.HostAndPort}/administration/configuration").Result;
-                        var json = result.Content.ReadAsStringAsync().Result;
-                        var response = JsonConvert.DeserializeObject<FileConfiguration>(json, new JsonSerializerSettings{TypeNameHandling = TypeNameHandling.All});
+                        var result = await _httpClientForAssertions.GetAsync($"{peer.HostAndPort}/administration/configuration");
+                        var json = await result.Content.ReadAsStringAsync();
+                        var response = JsonConvert.DeserializeObject<FileConfiguration>(json, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All });
                         response.GlobalConfiguration.RequestIdKey.ShouldBe(expecteds.Configuration.GlobalConfiguration.RequestIdKey);
                         response.GlobalConfiguration.ServiceDiscoveryProvider.Host.ShouldBe(expecteds.Configuration.GlobalConfiguration.ServiceDiscoveryProvider.Host);
                         response.GlobalConfiguration.ServiceDiscoveryProvider.Port.ShouldBe(expecteds.Configuration.GlobalConfiguration.ServiceDiscoveryProvider.Port);
@@ -260,7 +304,7 @@ namespace Ocelot.IntegrationTests
 
                     return passed == 5;
                 }
-                catch(Exception e)
+                catch (Exception e)
                 {
                     //_output.WriteLine($"{e.Message}, {e.StackTrace}");
                     Console.WriteLine(e);
@@ -268,26 +312,36 @@ namespace Ocelot.IntegrationTests
                 }
             }
 
-            var commandOnAllStateMachines = WaitFor(20000).Until(() => CommandCalledOnAllStateMachines());
-            commandOnAllStateMachines.ShouldBeTrue();   
+            var commandOnAllStateMachines = await Wait.WaitFor(40000).Until(async () =>
+            {
+                var result = await CommandCalledOnAllStateMachines();
+                Thread.Sleep(1000);
+                return result;
+            });
+
+            commandOnAllStateMachines.ShouldBeTrue();
         }
 
-        private void WhenIPostOnTheApiGateway(string url, FileConfiguration updatedConfiguration)
+        private async Task WhenIPostOnTheApiGateway(string url, FileConfiguration updatedConfiguration)
         {
-            bool SendCommand()
+            async Task<bool> SendCommand()
             {
                 var json = JsonConvert.SerializeObject(updatedConfiguration);
-                var content = new StringContent(json);
-                content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-                _response = _httpClient.PostAsync(url, content).Result;
-                var responseContent = _response.Content.ReadAsStringAsync().Result;
 
-                if(responseContent == "There was a problem. This error message sucks raise an issue in GitHub.")
+                var content = new StringContent(json);
+
+                content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+                _response = await _httpClient.PostAsync(url, content);
+
+                var responseContent = await _response.Content.ReadAsStringAsync();
+
+                if (responseContent == "There was a problem. This error message sucks raise an issue in GitHub.")
                 {
                     return false;
                 }
 
-                if(string.IsNullOrEmpty(responseContent))
+                if (string.IsNullOrEmpty(responseContent))
                 {
                     return false;
                 }
@@ -295,8 +349,14 @@ namespace Ocelot.IntegrationTests
                 return _response.IsSuccessStatusCode;
             }
 
-            var commandSent = WaitFor(20000).Until(() => SendCommand());
-            commandSent.ShouldBeTrue();  
+            var commandSent = await Wait.WaitFor(40000).Until(async () =>
+            {
+                var result = await SendCommand();
+                Thread.Sleep(1000);
+                return result;
+            });
+
+            commandSent.ShouldBeTrue();
         }
 
         private void GivenIHaveAddedATokenToMyRequest()
@@ -304,9 +364,9 @@ namespace Ocelot.IntegrationTests
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token.AccessToken);
         }
 
-        private void GivenIHaveAnOcelotToken(string adminPath)
+        private async Task GivenIHaveAnOcelotToken(string adminPath)
         {
-            bool AddToken()
+            async Task<bool> AddToken()
             {
                 try
                 {
@@ -320,26 +380,32 @@ namespace Ocelot.IntegrationTests
                     };
                     var content = new FormUrlEncodedContent(formData);
 
-                    var response = _httpClient.PostAsync(tokenUrl, content).Result;
-                    var responseContent = response.Content.ReadAsStringAsync().Result;
-                    if(!response.IsSuccessStatusCode)
+                    var response = await _httpClient.PostAsync(tokenUrl, content);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    if (!response.IsSuccessStatusCode)
                     {
                         return false;
                     }
 
                     _token = JsonConvert.DeserializeObject<BearerToken>(responseContent);
                     var configPath = $"{adminPath}/.well-known/openid-configuration";
-                    response = _httpClient.GetAsync(configPath).Result;
+                    response = await _httpClient.GetAsync(configPath);
                     return response.IsSuccessStatusCode;
                 }
-                catch(Exception)
+                catch (Exception)
                 {
                     return false;
                 }
             }
 
-            var addToken = WaitFor(20000).Until(() => AddToken());
-            addToken.ShouldBeTrue();   
+            var addToken = await Wait.WaitFor(40000).Until(async () =>
+            {
+                var result = await AddToken();
+                Thread.Sleep(1000);
+                return result;
+            });
+
+            addToken.ShouldBeTrue();
         }
 
         private void GivenThereIsAConfiguration(FileConfiguration fileConfiguration)
@@ -371,7 +437,7 @@ namespace Ocelot.IntegrationTests
 
         private void GivenAServerIsRunning(string url)
         {
-            lock(_lock)
+            lock (_lock)
             {
                 IWebHostBuilder webHostBuilder = new WebHostBuilder();
                 webHostBuilder.UseUrls(url)
@@ -381,13 +447,13 @@ namespace Ocelot.IntegrationTests
                     {
                         config.SetBasePath(hostingContext.HostingEnvironment.ContentRootPath);
                         var env = hostingContext.HostingEnvironment;
-                        config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-                            .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true, reloadOnChange: true);
-                        config.AddJsonFile("ocelot.json");
-                        config.AddJsonFile("peers.json", optional: true, reloadOnChange: true);
-                        #pragma warning disable CS0618
+                        config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+                            .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true, reloadOnChange: false);
+                        config.AddJsonFile("ocelot.json", false, false);
+                        config.AddJsonFile("peers.json", optional: true, reloadOnChange: false);
+#pragma warning disable CS0618
                         config.AddOcelotBaseUrl(url);
-                        #pragma warning restore CS0618
+#pragma warning restore CS0618
                         config.AddEnvironmentVariables();
                     })
                     .ConfigureServices(x =>
@@ -401,7 +467,7 @@ namespace Ocelot.IntegrationTests
                     .Configure(app =>
                     {
                         app.UseOcelot().Wait();
-                    }); 
+                    });
 
                 var builder = webHostBuilder.Build();
                 builder.Start();

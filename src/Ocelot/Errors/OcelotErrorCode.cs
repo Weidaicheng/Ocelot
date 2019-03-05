@@ -29,13 +29,14 @@
         UnableToFindLoadBalancerError,
         RequestTimedOutError,
         UnableToFindQoSProviderError,
-        UnableToSetConfigInConsulError,
         UnmappableRequestError,
         RateLimitOptionsError,
         PathTemplateDoesntStartWithForwardSlash,
         FileValidationFailedError,
         UnableToFindDelegatingHandlerProviderError,
         CouldNotFindPlaceholderError,
-        CouldNotFindAggregatorError
+        CouldNotFindAggregatorError,
+        CannotAddPlaceholderError,
+        CannotRemovePlaceholderError
     }
 }

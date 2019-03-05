@@ -1,6 +1,5 @@
 ﻿using System;
-using Butterfly.Client.Tracing;
-using Butterfly.OpenTracing;
+using Microsoft.Extensions.DependencyInjection;
 using Ocelot.Configuration;
 using Ocelot.Configuration.Creator;
 using Ocelot.Configuration.File;
@@ -11,17 +10,25 @@ using Xunit;
 
 namespace Ocelot.UnitTests.Configuration
 {
+    using System.Net.Http;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using Microsoft.AspNetCore.Http;
+    using Ocelot.Logging;
+
     public class HttpHandlerOptionsCreatorTests
     {
         private IHttpHandlerOptionsCreator _httpHandlerOptionsCreator;
         private FileReRoute _fileReRoute;
         private HttpHandlerOptions _httpHandlerOptions;
-        private IServiceTracer _serviceTracer;
+        private IServiceProvider _serviceProvider;
+        private IServiceCollection _serviceCollection;
 
         public HttpHandlerOptionsCreatorTests()
         {
-            _serviceTracer = new FakeServiceTracer();
-            _httpHandlerOptionsCreator = new HttpHandlerOptionsCreator(_serviceTracer);
+            _serviceCollection = new ServiceCollection();
+            _serviceProvider = _serviceCollection.BuildServiceProvider();
+            _httpHandlerOptionsCreator = new HttpHandlerOptionsCreator(_serviceProvider);
         }
 
         [Fact]
@@ -35,7 +42,7 @@ namespace Ocelot.UnitTests.Configuration
                 }
             };
 
-            var expectedOptions = new HttpHandlerOptions(false, false, false);
+            var expectedOptions = new HttpHandlerOptions(false, false, false, true);
 
             this.Given(x => GivenTheFollowing(fileReRoute))
                 .When(x => WhenICreateHttpHandlerOptions())
@@ -54,7 +61,7 @@ namespace Ocelot.UnitTests.Configuration
                 }
             };
 
-            var expectedOptions = new HttpHandlerOptions(false, false, true);
+            var expectedOptions = new HttpHandlerOptions(false, false, true, true);
 
             this.Given(x => GivenTheFollowing(fileReRoute))
                 .And(x => GivenARealTracer())
@@ -67,7 +74,7 @@ namespace Ocelot.UnitTests.Configuration
         public void should_create_options_with_useCookie_false_and_allowAutoRedirect_true_as_default()
         {
             var fileReRoute = new FileReRoute();
-            var expectedOptions = new HttpHandlerOptions(false, false, false);
+            var expectedOptions = new HttpHandlerOptions(false, false, false, true);
 
             this.Given(x => GivenTheFollowing(fileReRoute))
                 .When(x => WhenICreateHttpHandlerOptions())
@@ -88,7 +95,42 @@ namespace Ocelot.UnitTests.Configuration
                 }
             };
 
-            var expectedOptions = new HttpHandlerOptions(false, false, false);
+            var expectedOptions = new HttpHandlerOptions(false, false, false, true);
+
+            this.Given(x => GivenTheFollowing(fileReRoute))
+                .When(x => WhenICreateHttpHandlerOptions())
+                .Then(x => ThenTheFollowingOptionsReturned(expectedOptions))
+                .BDDfy();
+        }
+
+        [Fact]
+        public void should_create_options_with_useproxy_true_as_default()
+        {
+            var fileReRoute = new FileReRoute
+            {
+                HttpHandlerOptions = new FileHttpHandlerOptions()
+            };
+
+            var expectedOptions = new HttpHandlerOptions(false, false, false, true);
+
+            this.Given(x => GivenTheFollowing(fileReRoute))
+                .When(x => WhenICreateHttpHandlerOptions())
+                .Then(x => ThenTheFollowingOptionsReturned(expectedOptions))
+                .BDDfy();
+        }
+
+        [Fact]
+        public void should_create_options_with_specified_useproxy()
+        {
+            var fileReRoute = new FileReRoute
+            {
+                HttpHandlerOptions = new FileHttpHandlerOptions
+                {
+                    UseProxy = false
+                }
+            };
+
+            var expectedOptions = new HttpHandlerOptions(false, false, false, false);
 
             this.Given(x => GivenTheFollowing(fileReRoute))
                 .When(x => WhenICreateHttpHandlerOptions())
@@ -112,25 +154,26 @@ namespace Ocelot.UnitTests.Configuration
             _httpHandlerOptions.AllowAutoRedirect.ShouldBe(expected.AllowAutoRedirect);
             _httpHandlerOptions.UseCookieContainer.ShouldBe(expected.UseCookieContainer);
             _httpHandlerOptions.UseTracing.ShouldBe(expected.UseTracing);
+            _httpHandlerOptions.UseProxy.ShouldBe(expected.UseProxy);
         }
 
         private void GivenARealTracer()
         {
-            var tracer = new RealTracer();
-            _httpHandlerOptionsCreator = new HttpHandlerOptionsCreator(tracer);
+            var tracer = new FakeTracer();
+            _serviceCollection.AddSingleton<ITracer, FakeTracer>();
+            _serviceProvider = _serviceCollection.BuildServiceProvider();
+            _httpHandlerOptionsCreator = new HttpHandlerOptionsCreator(_serviceProvider);
         }
 
-        class RealTracer : IServiceTracer
+        class FakeTracer : ITracer
         {
-            public ITracer Tracer => throw new NotImplementedException();
+            public void Event(HttpContext httpContext, string @event)
+            {
+                throw new NotImplementedException();
+            }
 
-            public string ServiceName => throw new NotImplementedException();
-
-            public string Environment => throw new NotImplementedException();
-
-            public string Identity => throw new NotImplementedException();
-
-            public ISpan Start(ISpanBuilder spanBuilder)
+            public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken, Action<string> addTraceIdToRepo,
+                Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> baseSendAsync)
             {
                 throw new NotImplementedException();
             }
